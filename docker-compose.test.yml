@@ -1,0 +1,49 @@
+version: '3.8'
+
+# Test environment - use with: docker-compose -f docker-compose.test.yml up
+services:
+  postgres-test:
+    image: postgres:15
+    container_name: ecommerce-test-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: test_user
+      POSTGRES_PASSWORD: test_password
+      POSTGRES_DB: ecommerce_test
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test_user"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+
+  redis-test:
+    image: redis:7-alpine
+    container_name: ecommerce-test-redis
+    restart: unless-stopped
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - redis_test_data:/data
+
+volumes:
+  postgres_test_data:
+  redis_test_data:
+
+# Usage:
+# docker-compose -f docker-compose.test.yml up -d
+# 
+# Environment variables for tests:
+# DATABASE_URL=postgresql://test_user:test_password@localhost:5433/ecommerce_test
+# REDIS_HOST=localhost
+# REDIS_PORT=6380
+# 
+# Then run: npm run test:e2e
