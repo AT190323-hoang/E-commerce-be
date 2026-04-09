@@ -45,45 +45,20 @@ export class ProductsService {
   }
 
   async findAll(query: ProductQueryDto, pagination: PaginationParams) {
-    const normalizedQuery = {
-      ...query,
-      categoryId: query.categoryId ?? query.category,
-      limit: String(pagination.limit),
-      offset: String(pagination.offset),
-    };
+    const listParams = this.normalizeListParams(query, pagination);
 
-    const cacheKey = `${PRODUCT_LIST_CACHE_PREFIX}${JSON.stringify(normalizedQuery)}`;
+    const cacheKey = `${PRODUCT_LIST_CACHE_PREFIX}${JSON.stringify(listParams.cacheQuery)}`;
     const cached = await this.redisService.get(cacheKey);
     if (cached) {
       return cached;
     }
 
-    const limit = pagination.limit;
-    const skip = pagination.offset;
+    const { limit, skip, categoryId } = listParams;
     const page = Math.floor(skip / limit) + 1;
-    const categoryId = query.categoryId ?? query.category;
 
     const sortConfig = this.resolveSort(query);
 
-    const where: Prisma.ProductWhereInput = {
-      ...(query.search
-        ? {
-            name: {
-              contains: query.search,
-              mode: 'insensitive',
-            },
-          }
-        : {}),
-      ...(categoryId ? { categoryId } : {}),
-      ...(query.minPrice || query.maxPrice
-        ? {
-            price: {
-              ...(query.minPrice ? { gte: Number(query.minPrice) } : {}),
-              ...(query.maxPrice ? { lte: Number(query.maxPrice) } : {}),
-            },
-          }
-        : {}),
-    };
+    const where = this.buildListWhere(query, categoryId);
 
     const orderBy: Prisma.ProductOrderByWithRelationInput = {
       [sortConfig.sortBy]: sortConfig.sortOrder,
@@ -112,6 +87,47 @@ export class ProductsService {
 
     await this.redisService.set(cacheKey, result, PRODUCT_CACHE_TTL_SECONDS);
     return result;
+  }
+
+  private normalizeListParams(query: ProductQueryDto, pagination: PaginationParams) {
+    const categoryId = query.categoryId ?? query.category;
+
+    return {
+      limit: pagination.limit,
+      skip: pagination.offset,
+      categoryId,
+      cacheQuery: {
+        ...query,
+        categoryId,
+        limit: String(pagination.limit),
+        offset: String(pagination.offset),
+      },
+    };
+  }
+
+  private buildListWhere(
+    query: ProductQueryDto,
+    categoryId?: string,
+  ): Prisma.ProductWhereInput {
+    return {
+      ...(query.search
+        ? {
+            name: {
+              contains: query.search,
+              mode: 'insensitive',
+            },
+          }
+        : {}),
+      ...(categoryId ? { categoryId } : {}),
+      ...(query.minPrice || query.maxPrice
+        ? {
+            price: {
+              ...(query.minPrice ? { gte: Number(query.minPrice) } : {}),
+              ...(query.maxPrice ? { lte: Number(query.maxPrice) } : {}),
+            },
+          }
+        : {}),
+    };
   }
 
   async findOne(id: string) {
