@@ -101,6 +101,26 @@ ADMIN_SEED_PHONE=0900000000
 ADMIN_SEED_ADDRESS=Head Office
 ```
 
+Required variables for local run:
+
+- `DATABASE_URL`
+- `REDIS_HOST`, `REDIS_PORT`
+- `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`
+- `BCRYPT_SALT`
+
+Optional (only if testing payment/admin flows):
+
+- `VNPAY_*`
+- `ADMINJS_*`
+- `ADMIN_SEED_*`
+
+Quick pre-run checklist:
+
+1. PostgreSQL is reachable from `DATABASE_URL`.
+2. Redis is running on configured host/port.
+3. `npx prisma migrate deploy` completed successfully.
+4. `npm run db:seed` ran without errors.
+
 ## 6) Seed Data
 
 The project includes an idempotent seed script at `prisma/seed.mjs` that:
