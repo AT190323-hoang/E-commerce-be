@@ -211,21 +211,6 @@ Current test suites:
 
 Latest regression run: all suites passed.
 
-## 12) Key Learnings from This Project
-
-- Domain-based modular structure scales better over time
-- Redis token state makes auth lifecycle handling more practical
-- Idempotency is critical for payment/webhook reliability
-- E2E tests greatly reduce fear during refactoring
-- Idempotent seed scripts save setup/demo time
-
-## 13) Current Limitations / Next Improvements
-
-- No dedicated seller role yet (multi-vendor not implemented)
-- No read/write DB split or message queue integration
-- No custom frontend admin dashboard yet (using AdminJS)
-- Production-grade monitoring and alerting can be expanded
-
-## 14) License
+## 12) License
 
 UNLICENSED
