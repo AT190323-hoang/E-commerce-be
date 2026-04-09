@@ -73,11 +73,17 @@ export class AuthController {
   @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
   @Post('logout')
   logout(@Req() req: Request, @Body() dto: LogoutDto) {
-    const authHeader = req.headers.authorization;
-    const accessToken = authHeader?.startsWith('Bearer ')
-      ? authHeader.slice(7)
-      : undefined;
+    const accessToken = this.extractBearerToken(req.headers.authorization);
 
     return this.authService.logout(accessToken, dto.refreshToken);
+  }
+
+  private extractBearerToken(authHeader?: string) {
+    if (!authHeader) {
+      return undefined;
+    }
+
+    const matched = authHeader.trim().match(/^Bearer\s+(.+)$/i);
+    return matched?.[1]?.trim() || undefined;
   }
 }

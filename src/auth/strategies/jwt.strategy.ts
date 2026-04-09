@@ -20,10 +20,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(req: Request, payload: any) {
-    const authHeader = req.headers.authorization;
-    const token = authHeader?.startsWith('Bearer ')
-      ? authHeader.slice(7)
-      : undefined;
+    const token = this.extractBearerToken(req.headers.authorization);
 
     if (!token) {
       throw new UnauthorizedException('Missing access token');
@@ -38,5 +35,14 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     }
 
     return payload;
+  }
+
+  private extractBearerToken(authHeader?: string) {
+    if (!authHeader) {
+      return undefined;
+    }
+
+    const matched = authHeader.trim().match(/^Bearer\s+(.+)$/i);
+    return matched?.[1]?.trim() || undefined;
   }
 }
