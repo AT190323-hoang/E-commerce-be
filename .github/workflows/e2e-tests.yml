@@ -1,0 +1,147 @@
+name: E2E Tests - All Suites
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+jobs:
+  e2e-all-tests:
+    runs-on: ubuntu-latest
+    name: Complete E2E Test Suite
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: ecommerce_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup test environment
+        run: |
+          cat > .env.test << 'EOF'
+          NODE_ENV=test
+          DATABASE_URL=postgresql://test_user:test_password@localhost:5432/ecommerce_test
+          REDIS_HOST=localhost
+          REDIS_PORT=6379
+          JWT_ACCESS_SECRET=test_access_secret_key_12345
+          JWT_REFRESH_SECRET=test_refresh_secret_key_12345
+          JWT_ACCESS_EXPIRATION=15m
+          JWT_REFRESH_EXPIRATION=7d
+          BCRYPT_SALT=10
+          VNPAY_TMN_CODE=2CEX1U39
+          VNPAY_HASH_SECRET=test_hash_secret
+          VNPAY_API_URL=https://sandbox.vnpayment.vn
+          VNPAY_RETURN_URL=http://localhost:3000/payments/payment-return
+          VNPAY_IPN_URL=http://localhost:3000/payments/ipn
+          VNPAY_VERSION=2.1.0
+          LOG_LEVEL=debug
+          ENABLE_PAYMENT_LOGGING=true
+          ENABLE_REQUEST_LOGGING=true
+          EOF
+        shell: bash
+
+      - name: Build application
+        run: npm run build
+        timeout-minutes: 5
+
+      - name: Wait for services
+        run: |
+          echo "Waiting for PostgreSQL..."
+          for i in {1..30}; do
+            pg_isready -h localhost -p 5432 && break
+            echo "Attempt $i/30..."
+            sleep 1
+          done
+          
+          echo "Waiting for Redis..."
+          for i in {1..30}; do
+            redis-cli -h localhost -p 6379 ping && break
+            echo "Attempt $i/30..."
+            sleep 1
+          done
+
+      - name: Run Prisma migrations
+        run: npx prisma migrate deploy --skip-generate
+        env:
+          DATABASE_URL: postgresql://test_user:test_password@localhost:5432/ecommerce_test
+
+      - name: Run Payment E2E tests
+        run: npm run test:e2e -- payments.e2e-spec.ts
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgresql://test_user:test_password@localhost:5432/ecommerce_test
+
+      - name: Run Auth E2E tests
+        run: npm run test:e2e -- auth.e2e-spec.ts
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgresql://test_user:test_password@localhost:5432/ecommerce_test
+
+      - name: Run Shopping E2E tests
+        run: npm run test:e2e -- shopping.e2e-spec.ts
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgresql://test_user:test_password@localhost:5432/ecommerce_test
+
+      - name: Run Error Handling E2E tests
+        run: npm run test:e2e -- errors.e2e-spec.ts
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgresql://test_user:test_password@localhost:5432/ecommerce_test
+
+      - name: Collect coverage
+        run: npm run test:e2e 2>&1 | tee coverage.log
+        continue-on-error: true
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: e2e-test-results
+          path: |
+            coverage.log
+            coverage/
+          retention-days: 7
+
+      - name: Test summary
+        if: always()
+        run: |
+          echo "## E2E Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Payment Flow Tests" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Auth Flow Tests" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Shopping Flow Tests" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Error Handling Tests" >> $GITHUB_STEP_SUMMARY

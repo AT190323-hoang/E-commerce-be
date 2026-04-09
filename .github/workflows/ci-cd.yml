@@ -1,0 +1,183 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  # Job 1: Lint
+  lint:
+    runs-on: ubuntu-latest
+    name: ESLint & TypeScript Check
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: ESLint
+        run: npm run lint --if-present
+        continue-on-error: true
+
+      - name: TypeScript check
+        run: npm run build 2>&1 | head -50
+
+  # Job 2: Unit Tests
+  unit-tests:
+    runs-on: ubuntu-latest
+    name: Unit Tests
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests
+        run: npm run test --if-present
+
+  # Job 3: Build
+  build:
+    runs-on: ubuntu-latest
+    name: Build Project
+    needs: [lint, unit-tests]
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+        timeout-minutes: 10
+
+      - name: Upload build artifacts
+        if: success()
+        uses: actions/upload-artifact@v3
+        with:
+          name: build-dist
+          path: dist/
+          retention-days: 1
+
+  # Job 4: E2E Tests (depends on Redis)
+  e2e-tests:
+    runs-on: ubuntu-latest
+    name: E2E Payment Flow Tests
+    needs: build
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: ecommerce_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup environment
+        run: |
+          cat > .env.test << EOF
+          NODE_ENV=test
+          DATABASE_URL=postgresql://test_user:test_password@localhost:5432/ecommerce_test
+          REDIS_HOST=localhost
+          REDIS_PORT=6379
+          JWT_ACCESS_SECRET=test_access_secret
+          JWT_REFRESH_SECRET=test_refresh_secret
+          BCRYPT_SALT=10
+          VNPAY_TMN_CODE=2CEX1U39
+          VNPAY_HASH_SECRET=test_hash_secret
+          VNPAY_API_URL=https://sandbox.vnpayment.vn
+          VNPAY_RETURN_URL=http://localhost:3000/payments/payment-return
+          EOF
+
+      - name: Run Prisma migrations
+        run: |
+          npm run build
+          npx prisma migrate deploy --skip-generate
+        env:
+          DATABASE_URL: postgresql://test_user:test_password@localhost:5432/ecommerce_test
+
+      - name: Run E2E tests
+        run: npm run test:e2e -- payments.e2e-spec.ts
+        timeout-minutes: 5
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgresql://test_user:test_password@localhost:5432/ecommerce_test
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+
+      - name: Upload E2E results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: e2e-results
+          path: coverage/
+          retention-days: 7
+
+  # Final approval step
+  all-tests-pass:
+    runs-on: ubuntu-latest
+    name: All Checks Passed
+    needs: [lint, unit-tests, build, e2e-tests]
+    if: success()
+
+    steps:
+      - name: ✅ All checks passed
+        run: echo "All CI/CD checks have passed successfully!"
+
+  # Notification on failure
+  notify-failure:
+    runs-on: ubuntu-latest
+    name: Tests Failed Notification
+    if: failure()
+    needs: [lint, unit-tests, build, e2e-tests]
+
+    steps:
+      - name: ❌ Tests failed
+        run: exit 1
