@@ -1,0 +1,193 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+enum Role {
+  ADMIN
+  USER
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum PaymentRetryStatus {
+  PENDING
+  PROCESSING
+  SUCCEEDED
+  FAILED_PERMANENT
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  role      Role     @default(USER)
+  createdAt DateTime @default(now())
+
+  profile Profile?
+  cart    Cart?
+  orders  Order[]
+  reviews Review[]
+}
+
+
+model Profile {
+  id       String @id @default(uuid())
+  userId   String @unique
+  fullName String?
+  phone    String?
+  address  String?
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model Category {
+  id   String @id @default(uuid())
+  name String
+
+  products Product[]
+}
+
+model Product {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  price       Float
+  stock       Int
+  imageUrl    String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id])
+
+  cartItems  CartItem[]
+  orderItems OrderItem[]
+  reviews    Review[]
+}
+
+model Cart {
+  id     String @id @default(uuid())
+  userId String @unique
+
+  user  User       @relation(fields: [userId], references: [id])
+  items CartItem[]
+}
+
+model CartItem {
+  id        String @id @default(uuid())
+  cartId    String
+  productId String
+  quantity  Int
+
+  cart    Cart    @relation(fields: [cartId], references: [id])
+  product Product @relation(fields: [productId], references: [id])
+
+  @@unique([cartId, productId])
+}
+
+model Order {
+  id         String      @id @default(uuid())
+  userId     String
+  totalPrice Float
+  status     OrderStatus @default(PENDING)
+  statusUpdatedAt DateTime @default(now())
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  user  User        @relation(fields: [userId], references: [id])
+  items OrderItem[]
+  payment Payment?
+
+  shippingAddress String
+  phone           String
+}
+
+model Payment {
+  id        String         @id @default(uuid())
+  orderId   String         @unique
+  order     Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  amount    Float
+  currency  String         @default("USD")
+  status    PaymentStatus  @default(PENDING)
+  method    String         @default("mock")
+
+  externalId String?
+  metadata   Json?
+  retryLogs  PaymentRetryLog[]
+
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+}
+
+model PaymentRetryLog {
+  id                String             @id @default(uuid())
+  paymentId         String
+  payment           Payment            @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  eventKey          String             @unique
+  txnRef            String
+  responseCode      String
+  transactionStatus String
+  payload           Json
+
+  attemptCount      Int                @default(0)
+  status            PaymentRetryStatus @default(PENDING)
+  nextRetryAt       DateTime
+  lastError         String?
+  processedAt       DateTime?
+
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@index([status, nextRetryAt])
+  @@index([paymentId])
+}
+
+model OrderItem {
+  id        String @id @default(uuid())
+  orderId   String
+  productId String
+  quantity  Int
+  price     Float
+
+  order   Order   @relation(fields: [orderId], references: [id])
+  product Product @relation(fields: [productId], references: [id])
+}
+
+model Review {
+  id        String   @id @default(uuid())
+  userId    String
+  productId String
+  rating    Int
+  comment   String?
+  createdAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id])
+  product Product @relation(fields: [productId], references: [id])
+
+  @@unique([userId, productId])
+}
