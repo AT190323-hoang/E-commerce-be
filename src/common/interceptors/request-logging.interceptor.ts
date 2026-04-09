@@ -1,0 +1,51 @@
+import {
+  Injectable,
+  NestInterceptor,
+  ExecutionContext,
+  CallHandler,
+  Logger,
+} from '@nestjs/common';
+import { Observable } from 'rxjs';
+import { tap } from 'rxjs/operators';
+import { Request, Response } from 'express';
+import { v4 as uuidv4 } from 'uuid';
+
+@Injectable()
+export class RequestLoggingInterceptor implements NestInterceptor {
+  private readonly logger = new Logger(RequestLoggingInterceptor.name);
+
+  intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
+    const request = context.switchToHttp().getRequest<Request>();
+    const response = context.switchToHttp().getResponse<Response>();
+
+    // Generate request ID if not present
+    const requestId = (request.headers['x-request-id'] as string) || uuidv4();
+    response.setHeader('x-request-id', requestId);
+
+    const { method, url, ip } = request;
+    const userAgent = request.get('user-agent');
+    const startTime = Date.now();
+
+    return next.handle().pipe(
+      tap({
+        next: () => {
+          const duration = Date.now() - startTime;
+          const statusCode = response.statusCode;
+
+          this.logger.log(
+            `[${requestId}] ${method} ${url} - ${statusCode} - ${duration}ms - ${ip} - ${userAgent}`,
+          );
+        },
+        error: (error) => {
+          const duration = Date.now() - startTime;
+          const statusCode = response.statusCode || 500;
+
+          this.logger.error(
+            `[${requestId}] ${method} ${url} - ${statusCode} - ${duration}ms - ${ip}`,
+            error.message,
+          );
+        },
+      }),
+    );
+  }
+}
